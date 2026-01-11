@@ -21,6 +21,9 @@ type Server struct {
 	userHandler       *handlers.UserHandler
 	orderHandler      *handlers.OrderHandler
 	withdrawalHandler *handlers.WithdrawalHandler
+	// Добавляем репозитории
+	orderRepo   repository.OrderRepository
+	balanceRepo repository.BalanceRepository
 }
 
 func New(ctx context.Context, cfg *config.Config) (*Server, error) {
@@ -54,6 +57,8 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		userHandler:       userHandler,
 		orderHandler:      orderHandler,
 		withdrawalHandler: withdrawalHandler,
+		orderRepo:         orderRepo,   // Сохраняем
+		balanceRepo:       balanceRepo, // Сохраняем
 	}
 
 	s.setupRoutes()
@@ -68,6 +73,15 @@ func (s *Server) setupRoutes() {
 
 func (s *Server) Router() *chi.Mux {
 	return s.router
+}
+
+// Добавляем геттеры для репозиториев
+func (s *Server) OrderRepo() repository.OrderRepository {
+	return s.orderRepo
+}
+
+func (s *Server) BalanceRepo() repository.BalanceRepository {
+	return s.balanceRepo
 }
 
 func (s *Server) Shutdown() {
