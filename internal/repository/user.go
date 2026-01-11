@@ -1,0 +1,91 @@
+package repository
+
+import (
+	"context"
+	"errors"
+
+	"github.com/Daniil-Podruchny/gofermart-loyalty/internal/models"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type UserRepository interface {
+	Create(ctx context.Context, user *models.User) error
+	GetByLogin(ctx context.Context, login string) (*models.User, error)
+	GetByID(ctx context.Context, id int64) (*models.User, error)
+}
+
+type PgxPool interface {
+	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
+	Close()
+}
+
+type userRepository struct {
+	pool PgxPool
+}
+
+func NewUserRepository(pool *pgxpool.Pool) UserRepository {
+	return &userRepository{pool: pool}
+}
+
+func (r *userRepository) Create(ctx context.Context, user *models.User) error {
+	query := `
+		INSERT INTO users (login, password_hash, created_at) 
+		VALUES ($1, $2, $3) 
+		RETURNING id
+	`
+
+	err := r.pool.QueryRow(ctx, query, user.Login, user.PasswordHash, user.CreatedAt).Scan(&user.ID)
+	return err
+}
+
+func (r *userRepository) GetByLogin(ctx context.Context, login string) (*models.User, error) {
+	query := `
+		SELECT id, login, password_hash, created_at 
+		FROM users 
+		WHERE login = $1
+	`
+
+	var user models.User
+	err := r.pool.QueryRow(ctx, query, login).Scan(
+		&user.ID,
+		&user.Login,
+		&user.PasswordHash,
+		&user.CreatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+func (r *userRepository) GetByID(ctx context.Context, id int64) (*models.User, error) {
+	query := `
+		SELECT id, login, password_hash, created_at 
+		FROM users 
+		WHERE id = $1
+	`
+
+	var user models.User
+	err := r.pool.QueryRow(ctx, query, id).Scan(
+		&user.ID,
+		&user.Login,
+		&user.PasswordHash,
+		&user.CreatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &user, nil
+}
