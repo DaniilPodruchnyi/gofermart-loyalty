@@ -186,3 +186,86 @@ func TestBalanceRepository_InitializeBalance(t *testing.T) {
 		})
 	}
 }
+
+func TestBalanceRepository_Withdraw(t *testing.T) {
+	tests := []struct {
+		name    string
+		userID  int64
+		amount  float64
+		mockFn  func(pgxmock.PgxPoolIface)
+		wantErr error
+	}{
+		{
+			name:   "success",
+			userID: 1,
+			amount: 100.0,
+			mockFn: func(mock pgxmock.PgxPoolIface) {
+				mock.ExpectBegin()
+				// SELECT FOR UPDATE
+				rows := pgxmock.NewRows([]string{"current"}).AddRow(float64(500.0))
+				mock.ExpectQuery("SELECT current FROM balance WHERE user_id").
+					WithArgs(int64(1)).
+					WillReturnRows(rows)
+				// UPDATE
+				mock.ExpectExec("UPDATE balance").
+					WithArgs(float64(100.0), int64(1)).
+					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+				mock.ExpectCommit()
+			},
+			wantErr: nil,
+		},
+		{
+			name:   "insufficient funds",
+			userID: 1,
+			amount: 1000.0,
+			mockFn: func(mock pgxmock.PgxPoolIface) {
+				mock.ExpectBegin()
+				rows := pgxmock.NewRows([]string{"current"}).AddRow(float64(500.0))
+				mock.ExpectQuery("SELECT current FROM balance WHERE user_id").
+					WithArgs(int64(1)).
+					WillReturnRows(rows)
+				mock.ExpectRollback()
+			},
+			wantErr: ErrInsufficientFunds,
+		},
+		{
+			name:   "balance not found",
+			userID: 999,
+			amount: 100.0,
+			mockFn: func(mock pgxmock.PgxPoolIface) {
+				mock.ExpectBegin()
+				mock.ExpectQuery("SELECT current FROM balance WHERE user_id").
+					WithArgs(int64(999)).
+					WillReturnError(pgx.ErrNoRows)
+				mock.ExpectRollback()
+			},
+			wantErr: ErrInsufficientFunds,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock, err := pgxmock.NewPool()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer mock.Close()
+
+			tt.mockFn(mock)
+
+			repo := &balanceRepository{pool: mock}
+			err = repo.Withdraw(context.Background(), tt.userID, tt.amount)
+
+			if tt.wantErr != nil {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Errorf("unfulfilled expectations: %s", err)
+			}
+		})
+	}
+}

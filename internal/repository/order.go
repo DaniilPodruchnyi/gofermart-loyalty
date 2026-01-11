@@ -19,7 +19,7 @@ type OrderRepository interface {
 }
 
 type orderRepository struct {
-	pool PgxPool // Используем интерфейс из user.go
+	pool PgxPool
 }
 
 func NewOrderRepository(pool *pgxpool.Pool) OrderRepository {

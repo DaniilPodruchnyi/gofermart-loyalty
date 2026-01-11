@@ -59,6 +59,7 @@ type mockBalanceRepository struct {
 	getByUserIDFunc       func(ctx context.Context, userID int64) (current, withdrawn float64, err error)
 	addAccrualFunc        func(ctx context.Context, userID int64, amount float64) error
 	initializeBalanceFunc func(ctx context.Context, userID int64) error
+	withdrawFunc          func(ctx context.Context, userID int64, amount float64) error
 }
 
 func (m *mockBalanceRepository) GetByUserID(ctx context.Context, userID int64) (current, withdrawn float64, err error) {
@@ -78,6 +79,14 @@ func (m *mockBalanceRepository) AddAccrual(ctx context.Context, userID int64, am
 func (m *mockBalanceRepository) InitializeBalance(ctx context.Context, userID int64) error {
 	if m.initializeBalanceFunc != nil {
 		return m.initializeBalanceFunc(ctx, userID)
+	}
+	return nil
+}
+
+// Добавляем метод Withdraw
+func (m *mockBalanceRepository) Withdraw(ctx context.Context, userID int64, amount float64) error {
+	if m.withdrawFunc != nil {
+		return m.withdrawFunc(ctx, userID, amount)
 	}
 	return nil
 }

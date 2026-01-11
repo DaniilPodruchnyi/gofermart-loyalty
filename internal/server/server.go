@@ -15,11 +15,12 @@ import (
 )
 
 type Server struct {
-	config       *config.Config
-	router       *chi.Mux
-	pool         *pgxpool.Pool
-	userHandler  *handlers.UserHandler
-	orderHandler *handlers.OrderHandler
+	config            *config.Config
+	router            *chi.Mux
+	pool              *pgxpool.Pool
+	userHandler       *handlers.UserHandler
+	orderHandler      *handlers.OrderHandler
+	withdrawalHandler *handlers.WithdrawalHandler
 }
 
 func New(ctx context.Context, cfg *config.Config) (*Server, error) {
@@ -34,21 +35,25 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 	userRepo := repository.NewUserRepository(pool)
 	orderRepo := repository.NewOrderRepository(pool)
 	balanceRepo := repository.NewBalanceRepository(pool)
+	withdrawalRepo := repository.NewWithdrawalRepository(pool)
 
 	// Инициализация сервисов
 	userService := service.NewUserService(userRepo, cfg.JWTSecret)
 	orderService := service.NewOrderService(orderRepo, balanceRepo)
+	withdrawalService := service.NewWithdrawalService(withdrawalRepo, balanceRepo)
 
 	// Инициализация хендлеров
 	userHandler := handlers.NewUserHandler(userService)
 	orderHandler := handlers.NewOrderHandler(orderService)
+	withdrawalHandler := handlers.NewWithdrawalHandler(withdrawalService)
 
 	s := &Server{
-		config:       cfg,
-		router:       chi.NewRouter(),
-		pool:         pool,
-		userHandler:  userHandler,
-		orderHandler: orderHandler,
+		config:            cfg,
+		router:            chi.NewRouter(),
+		pool:              pool,
+		userHandler:       userHandler,
+		orderHandler:      orderHandler,
+		withdrawalHandler: withdrawalHandler,
 	}
 
 	s.setupRoutes()
@@ -57,7 +62,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 }
 
 func (s *Server) setupRoutes() {
-	routerInstance := NewRouter(s.userHandler, s.orderHandler, s.config.JWTSecret)
+	routerInstance := NewRouter(s.userHandler, s.orderHandler, s.withdrawalHandler, s.config.JWTSecret)
 	s.router = routerInstance.Routes().(*chi.Mux)
 }
 
