@@ -1,19 +1,45 @@
 package server
 
 import (
+	"net/http"
+
+	"github.com/Daniil-Podruchny/gofermart-loyalty/internal/handlers"
+	"github.com/Daniil-Podruchny/gofermart-loyalty/internal/server/middleware"
+
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 )
 
-func (s *Server) setupRoutes() {
-	s.router.Use(middleware.RequestID)
-	s.router.Use(middleware.RealIP)
-	s.router.Use(middleware.Logger)
-	s.router.Use(middleware.Recoverer)
-	s.router.Use(middleware.Compress(5))
+type Router struct {
+	userHandler  *handlers.UserHandler
+	orderHandler *handlers.OrderHandler
+	jwtSecret    string
+}
 
-	s.router.Route("/api/user", func(r chi.Router) {
-		r.Post("/register", s.userHandler.Register)
-		r.Post("/login", s.userHandler.Login)
+func NewRouter(userHandler *handlers.UserHandler, orderHandler *handlers.OrderHandler, jwtSecret string) *Router {
+	return &Router{
+		userHandler:  userHandler,
+		orderHandler: orderHandler,
+		jwtSecret:    jwtSecret,
+	}
+}
+
+func (rt *Router) Routes() http.Handler {
+	r := chi.NewRouter()
+
+	r.Route("/api/user", func(r chi.Router) {
+		// Публичные эндпоинты
+		r.Post("/register", rt.userHandler.Register)
+		r.Post("/login", rt.userHandler.Login)
+
+		// Защищенные эндпоинты
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.Auth(rt.jwtSecret))
+
+			r.Post("/orders", rt.orderHandler.UploadOrder)
+			r.Get("/orders", rt.orderHandler.GetOrders)
+			r.Get("/balance", rt.orderHandler.GetBalance)
+		})
 	})
+
+	return r
 }

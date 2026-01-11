@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Daniil-Podruchny/gofermart-loyalty/internal/config"
+	"github.com/Daniil-Podruchny/gofermart-loyalty/internal/database"
 	"github.com/Daniil-Podruchny/gofermart-loyalty/internal/server"
 	"github.com/Daniil-Podruchny/gofermart-loyalty/pkg/logger"
 
@@ -16,45 +18,66 @@ import (
 )
 
 func main() {
+	// Инициализация логгера
 	if err := logger.Initialize(); err != nil {
-		panic(err)
+		log.Fatalf("failed to initialize logger: %v", err)
 	}
 	defer logger.Sync()
 
-	cfg, err := config.Load()
-	if err != nil {
-		logger.Log.Fatal("failed to load config", zap.Error(err))
+	// Загрузка конфигурации
+	cfg := config.Load()
+	logger.Info("configuration loaded",
+		zap.String("run_address", cfg.RunAddress),
+		zap.String("database_uri", cfg.DatabaseURI),
+	)
+
+	// Применение миграций
+	if err := database.RunMigrations(cfg.DatabaseURI); err != nil {
+		logger.Error("failed to run migrations", zap.Error(err))
+		os.Exit(1)
 	}
 
-	ctx := context.Background()
-	srv, err := server.New(ctx, cfg)
+	logger.Info("migrations applied successfully")
+
+	// Создание сервера
+	srv, err := server.New(context.Background(), cfg)
 	if err != nil {
-		logger.Log.Fatal("failed to create server", zap.Error(err))
+		logger.Error("failed to create server", zap.Error(err))
+		os.Exit(1)
 	}
 	defer srv.Shutdown()
 
+	// Создание HTTP сервера
 	httpServer := &http.Server{
-		Addr:    cfg.RunAddress,
-		Handler: srv.Router(),
+		Addr:         cfg.RunAddress,
+		Handler:      srv.Router(),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
+	// Запуск сервера в горутине
 	go func() {
-		logger.Log.Info("starting server", zap.String("address", cfg.RunAddress))
+		logger.Info("starting server", zap.String("address", cfg.RunAddress))
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Log.Fatal("server failed", zap.Error(err))
+			logger.Error("server error", zap.Error(err))
+			os.Exit(1)
 		}
 	}()
 
+	// Ожидание сигнала остановки
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Log.Info("shutting down gracefully")
+	logger.Info("shutting down server...")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		logger.Log.Error("server shutdown error", zap.Error(err))
+	if err := httpServer.Shutdown(ctx); err != nil {
+		logger.Error("server forced to shutdown", zap.Error(err))
 	}
+
+	logger.Info("server stopped")
 }

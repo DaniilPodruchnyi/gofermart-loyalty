@@ -16,11 +16,6 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id int64) (*models.User, error)
 }
 
-type PgxPool interface {
-	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
-	Close()
-}
-
 type userRepository struct {
 	pool PgxPool
 }
