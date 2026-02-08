@@ -60,7 +60,9 @@ func TestUserRepository_Create(t *testing.T) {
 
 			tt.mockFn(mock)
 
-			repo := &userRepository{pool: mock}
+			repo := &userRepository{
+				BaseRepository: NewBaseRepository[*models.User](mock, "users"),
+			}
 			err = repo.Create(context.Background(), tt.user)
 
 			if (err != nil) != tt.wantErr {
@@ -125,7 +127,9 @@ func TestUserRepository_GetByLogin(t *testing.T) {
 
 			tt.mockFn(mock)
 
-			repo := &userRepository{pool: mock}
+			repo := &userRepository{
+				BaseRepository: NewBaseRepository[*models.User](mock, "users"),
+			}
 			user, err := repo.GetByLogin(context.Background(), tt.login)
 
 			if (err != nil) != tt.wantErr {
@@ -196,7 +200,9 @@ func TestUserRepository_GetByID(t *testing.T) {
 
 			tt.mockFn(mock)
 
-			repo := &userRepository{pool: mock}
+			repo := &userRepository{
+				BaseRepository: NewBaseRepository[*models.User](mock, "users"),
+			}
 			user, err := repo.GetByID(context.Background(), tt.id)
 
 			if (err != nil) != tt.wantErr {

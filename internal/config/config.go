@@ -2,7 +2,7 @@ package config
 
 import (
 	"flag"
-	"fmt"
+	"log"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -15,38 +15,38 @@ type Config struct {
 	JWTSecret            string
 }
 
-func Load() (*Config, error) {
-	_ = godotenv.Load()
-
-	runAddress := flag.String("a", "", "server run address")
-	databaseURI := flag.String("d", "", "database connection URI")
-	accrualAddress := flag.String("r", "", "accrual system address")
-	flag.Parse()
+func Load() *Config {
+	// Попытка загрузить .env файл (игнорируем ошибку если файла нет)
+	if err := godotenv.Load(); err != nil {
+		log.Printf("No .env file found or error loading it: %v", err)
+	}
 
 	cfg := &Config{
-		RunAddress:           getEnvOrFlag("RUN_ADDRESS", *runAddress, ":8080"),
-		DatabaseURI:          getEnvOrFlag("DATABASE_URI", *databaseURI, ""),
-		AccrualSystemAddress: getEnvOrFlag("ACCRUAL_SYSTEM_ADDRESS", *accrualAddress, ""),
-		JWTSecret:            os.Getenv("JWT_SECRET"),
+		JWTSecret: "your-secret-key-change-in-production",
 	}
 
+	flag.StringVar(&cfg.RunAddress, "a", ":8080", "server run address")
+	flag.StringVar(&cfg.DatabaseURI, "d", "", "database connection string")
+	flag.StringVar(&cfg.AccrualSystemAddress, "r", "", "accrual system address")
+	flag.Parse()
+
+	// Приоритет: флаги -> переменные окружения -> значения по умолчанию
 	if cfg.DatabaseURI == "" {
-		return nil, fmt.Errorf("DATABASE_URI is required")
+		if envDatabaseURI := os.Getenv("DATABASE_URI"); envDatabaseURI != "" {
+			cfg.DatabaseURI = envDatabaseURI
+		} else if envDatabaseURL := os.Getenv("DATABASE_URL"); envDatabaseURL != "" {
+			// Поддержка DATABASE_URL (часто используется в Heroku и других платформах)
+			cfg.DatabaseURI = envDatabaseURL
+		}
 	}
 
-	if cfg.JWTSecret == "" {
-		cfg.JWTSecret = "default-secret-key"
+	if envRunAddress := os.Getenv("RUN_ADDRESS"); envRunAddress != "" {
+		cfg.RunAddress = envRunAddress
 	}
 
-	return cfg, nil
-}
+	if envAccrualAddress := os.Getenv("ACCRUAL_SYSTEM_ADDRESS"); envAccrualAddress != "" {
+		cfg.AccrualSystemAddress = envAccrualAddress
+	}
 
-func getEnvOrFlag(envKey, flagValue, defaultValue string) string {
-	if flagValue != "" {
-		return flagValue
-	}
-	if envValue := os.Getenv(envKey); envValue != "" {
-		return envValue
-	}
-	return defaultValue
+	return cfg
 }

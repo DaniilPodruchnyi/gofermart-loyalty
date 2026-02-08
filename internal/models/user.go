@@ -18,3 +18,11 @@ type LoginRequest struct {
 	Login    string `json:"login"`
 	Password string `json:"password"`
 }
+
+func (u *User) GetID() int64 {
+	return u.ID
+}
+
+func (u *User) SetID(id int64) {
+	u.ID = id
+}
