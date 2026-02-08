@@ -23,3 +23,11 @@ type WithdrawalResponse struct {
 	Sum         float64 `json:"sum"`
 	ProcessedAt string  `json:"processed_at"`
 }
+
+func (w *Withdrawal) GetID() int64 {
+	return w.ID
+}
+
+func (w *Withdrawal) SetID(id int64) {
+	w.ID = id
+}

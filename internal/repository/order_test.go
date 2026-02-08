@@ -64,7 +64,9 @@ func TestOrderRepository_Create(t *testing.T) {
 
 			tt.mockFn(mock)
 
-			repo := &orderRepository{pool: mock}
+			repo := &orderRepository{
+				BaseRepository: NewBaseRepository[*models.Order](mock, "orders"),
+			}
 			err = repo.Create(context.Background(), tt.order)
 
 			if tt.wantErr {
@@ -145,7 +147,9 @@ func TestOrderRepository_GetByNumber(t *testing.T) {
 
 			tt.mockFn(mock)
 
-			repo := &orderRepository{pool: mock}
+			repo := &orderRepository{
+				BaseRepository: NewBaseRepository[*models.Order](mock, "orders"),
+			}
 			order, err := repo.GetByNumber(context.Background(), tt.number)
 
 			if tt.wantErr {
@@ -228,7 +232,9 @@ func TestOrderRepository_GetByUserID(t *testing.T) {
 
 			tt.mockFn(mock)
 
-			repo := &orderRepository{pool: mock}
+			repo := &orderRepository{
+				BaseRepository: NewBaseRepository[*models.Order](mock, "orders"),
+			}
 			orders, err := repo.GetByUserID(context.Background(), tt.userID)
 
 			if tt.wantErr {
@@ -290,7 +296,9 @@ func TestOrderRepository_UpdateStatus(t *testing.T) {
 
 			tt.mockFn(mock)
 
-			repo := &orderRepository{pool: mock}
+			repo := &orderRepository{
+				BaseRepository: NewBaseRepository[*models.Order](mock, "orders"),
+			}
 			err = repo.UpdateStatus(context.Background(), tt.number, tt.status, tt.accrual)
 
 			if tt.wantErr {
@@ -351,7 +359,9 @@ func TestOrderRepository_GetPendingOrders(t *testing.T) {
 
 			tt.mockFn(mock)
 
-			repo := &orderRepository{pool: mock}
+			repo := &orderRepository{
+				BaseRepository: NewBaseRepository[*models.Order](mock, "orders"),
+			}
 			orders, err := repo.GetPendingOrders(context.Background())
 
 			if tt.wantErr {

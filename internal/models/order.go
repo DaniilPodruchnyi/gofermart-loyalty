@@ -20,6 +20,14 @@ type Order struct {
 	UploadedAt time.Time   `db:"uploaded_at"`
 }
 
+func (o *Order) GetID() int64 {
+	return o.ID
+}
+
+func (o *Order) SetID(id int64) {
+	o.ID = id
+}
+
 type OrderResponse struct {
 	Number     string      `json:"number"`
 	Status     OrderStatus `json:"status"`

@@ -8,10 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var (
-	ErrInsufficientFunds = errors.New("insufficient funds")
-)
-
 // BalanceRepository определяет методы для работы с балансом
 type BalanceRepository interface {
 	GetByUserID(ctx context.Context, userID int64) (current, withdrawn float64, err error)

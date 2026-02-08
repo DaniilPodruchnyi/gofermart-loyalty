@@ -21,12 +21,30 @@ type Server struct {
 	userHandler       *handlers.UserHandler
 	orderHandler      *handlers.OrderHandler
 	withdrawalHandler *handlers.WithdrawalHandler
-	// Добавляем репозитории
-	orderRepo   repository.OrderRepository
-	balanceRepo repository.BalanceRepository
+	orderRepo         repository.OrderRepository
+	balanceRepo       repository.BalanceRepository
 }
 
-func New(ctx context.Context, cfg *config.Config) (*Server, error) {
+type ServerOption func(*Server) error
+
+// WithPool устанавливает connection pool
+func WithPool(pool *pgxpool.Pool) ServerOption {
+	return func(s *Server) error {
+		s.pool = pool
+		return nil
+	}
+}
+
+// WithConfig устанавливает конфигурацию
+func WithConfig(cfg *config.Config) ServerOption {
+	return func(s *Server) error {
+		s.config = cfg
+		return nil
+	}
+}
+
+func New(ctx context.Context, cfg *config.Config, opts ...ServerOption) (*Server, error) {
+	// Создаем pool если не передан
 	pool, err := database.NewPool(ctx, cfg.DatabaseURI)
 	if err != nil {
 		return nil, err
@@ -34,32 +52,34 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 
 	logger.Info("database connection established")
 
+	s := &Server{
+		config: cfg,
+		pool:   pool,
+		router: chi.NewRouter(),
+	}
+
+	// Применяем опции
+	for _, opt := range opts {
+		if err := opt(s); err != nil {
+			return nil, err
+		}
+	}
+
 	// Инициализация репозиториев
-	userRepo := repository.NewUserRepository(pool)
-	orderRepo := repository.NewOrderRepository(pool)
-	balanceRepo := repository.NewBalanceRepository(pool)
-	withdrawalRepo := repository.NewWithdrawalRepository(pool)
+	userRepo := repository.NewUserRepository(s.pool)
+	s.orderRepo = repository.NewOrderRepository(s.pool)
+	s.balanceRepo = repository.NewBalanceRepository(s.pool)
+	withdrawalRepo := repository.NewWithdrawalRepository(s.pool)
 
 	// Инициализация сервисов
 	userService := service.NewUserService(userRepo, cfg.JWTSecret)
-	orderService := service.NewOrderService(orderRepo, balanceRepo)
-	withdrawalService := service.NewWithdrawalService(withdrawalRepo, balanceRepo)
+	orderService := service.NewOrderService(s.orderRepo, s.balanceRepo)
+	withdrawalService := service.NewWithdrawalService(withdrawalRepo, s.balanceRepo)
 
 	// Инициализация хендлеров
-	userHandler := handlers.NewUserHandler(userService)
-	orderHandler := handlers.NewOrderHandler(orderService)
-	withdrawalHandler := handlers.NewWithdrawalHandler(withdrawalService)
-
-	s := &Server{
-		config:            cfg,
-		router:            chi.NewRouter(),
-		pool:              pool,
-		userHandler:       userHandler,
-		orderHandler:      orderHandler,
-		withdrawalHandler: withdrawalHandler,
-		orderRepo:         orderRepo,   // Сохраняем
-		balanceRepo:       balanceRepo, // Сохраняем
-	}
+	s.userHandler = handlers.NewUserHandler(userService)
+	s.orderHandler = handlers.NewOrderHandler(orderService)
+	s.withdrawalHandler = handlers.NewWithdrawalHandler(withdrawalService)
 
 	s.setupRoutes()
 
@@ -75,7 +95,6 @@ func (s *Server) Router() *chi.Mux {
 	return s.router
 }
 
-// Добавляем геттеры для репозиториев
 func (s *Server) OrderRepo() repository.OrderRepository {
 	return s.orderRepo
 }

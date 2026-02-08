@@ -17,6 +17,7 @@ import (
 	"github.com/Daniil-Podruchny/gofermart-loyalty/pkg/logger"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -42,11 +43,11 @@ func main() {
 
 	logger.Info("migrations applied successfully")
 
-	// Создание контекста для worker
+	// Создание контекста с отменой
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Создание сервера
+	// Создание сервера с functional options
 	srv, err := server.New(ctx, cfg)
 	if err != nil {
 		logger.Error("failed to create server", zap.Error(err))
@@ -54,23 +55,7 @@ func main() {
 	}
 	defer srv.Shutdown()
 
-	// Запуск accrual worker если указан адрес
-	var accrualWorker *worker.AccrualWorker
-	if cfg.AccrualSystemAddress != "" {
-		accrualClient := client.NewAccrualClient(cfg.AccrualSystemAddress)
-		accrualWorker = worker.NewAccrualWorker(
-			accrualClient,
-			srv.OrderRepo(),
-			srv.BalanceRepo(),
-		)
-
-		go accrualWorker.Start(ctx)
-		logger.Info("accrual worker started", zap.String("address", cfg.AccrualSystemAddress))
-	} else {
-		logger.Warn("accrual system address not provided, worker disabled")
-	}
-
-	// Создание HTTP сервера
+	// HTTP сервер
 	httpServer := &http.Server{
 		Addr:         cfg.RunAddress,
 		Handler:      srv.Router(),
@@ -79,30 +64,54 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Запуск сервера в горутине
-	go func() {
+	// Используем errgroup для structured concurrency
+	g, gCtx := errgroup.WithContext(ctx)
+
+	// Горутина для HTTP сервера
+	g.Go(func() error {
 		logger.Info("starting server", zap.String("address", cfg.RunAddress))
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("server error", zap.Error(err))
-			os.Exit(1)
+			return err
 		}
-	}()
+		return nil
+	})
+
+	// Горутина для accrual worker
+	if cfg.AccrualSystemAddress != "" {
+		accrualClient := client.NewAccrualClient(cfg.AccrualSystemAddress)
+		accrualWorker := worker.NewAccrualWorker(
+			accrualClient,
+			srv.OrderRepo(),
+			srv.BalanceRepo(),
+			worker.WithConcurrency(10),
+			worker.WithPollInterval(5*time.Second),
+		)
+
+		g.Go(func() error {
+			accrualWorker.Start(gCtx)
+			return nil
+		})
+
+		logger.Info("accrual worker started", zap.String("address", cfg.AccrualSystemAddress))
+	} else {
+		logger.Warn("accrual system address not provided, worker disabled")
+	}
 
 	// Ожидание сигнала остановки
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
 
-	logger.Info("shutting down server...")
-
-	// Останавливаем worker
-	cancel()
-	if accrualWorker != nil {
-		accrualWorker.Stop()
-		logger.Info("accrual worker stopped")
+	select {
+	case <-quit:
+		logger.Info("shutting down server...")
+	case <-gCtx.Done():
+		logger.Error("context cancelled", zap.Error(gCtx.Err()))
 	}
 
-	// Останавливаем HTTP сервер
+	// Останавливаем контекст для worker и сервера
+	cancel()
+
+	// Graceful shutdown HTTP сервера
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 
@@ -110,11 +119,15 @@ func main() {
 		logger.Error("server forced to shutdown", zap.Error(err))
 	}
 
+	// Ждем завершения всех горутин
+	if err := g.Wait(); err != nil && err != http.ErrServerClosed {
+		logger.Error("error from errgroup", zap.Error(err))
+	}
+
 	logger.Info("server stopped")
 }
 
 func maskDatabaseURI(uri string) string {
-	// Простое маскирование для логов
 	if len(uri) > 20 {
 		return uri[:10] + "***" + uri[len(uri)-10:]
 	}

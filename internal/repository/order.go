@@ -5,9 +5,7 @@ import (
 	"errors"
 
 	"github.com/Daniil-Podruchny/gofermart-loyalty/internal/models"
-
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type OrderRepository interface {
@@ -19,11 +17,13 @@ type OrderRepository interface {
 }
 
 type orderRepository struct {
-	pool PgxPool
+	*BaseRepository[*models.Order]
 }
 
-func NewOrderRepository(pool *pgxpool.Pool) OrderRepository {
-	return &orderRepository{pool: pool}
+func NewOrderRepository(pool PgxPool) OrderRepository {
+	return &orderRepository{
+		BaseRepository: NewBaseRepository[*models.Order](pool, "orders"),
+	}
 }
 
 func (r *orderRepository) Create(ctx context.Context, order *models.Order) error {
@@ -33,7 +33,7 @@ func (r *orderRepository) Create(ctx context.Context, order *models.Order) error
 		RETURNING id
 	`
 
-	err := r.pool.QueryRow(ctx, query,
+	err := r.QueryRow(ctx, query,
 		order.UserID,
 		order.Number,
 		order.Status,
@@ -51,8 +51,8 @@ func (r *orderRepository) GetByNumber(ctx context.Context, number string) (*mode
 		WHERE number = $1
 	`
 
-	var order models.Order
-	err := r.pool.QueryRow(ctx, query, number).Scan(
+	order := &models.Order{}
+	err := r.QueryRow(ctx, query, number).Scan(
 		&order.ID,
 		&order.UserID,
 		&order.Number,
@@ -68,7 +68,7 @@ func (r *orderRepository) GetByNumber(ctx context.Context, number string) (*mode
 		return nil, err
 	}
 
-	return &order, nil
+	return order, nil
 }
 
 func (r *orderRepository) GetByUserID(ctx context.Context, userID int64) ([]models.Order, error) {
@@ -79,7 +79,7 @@ func (r *orderRepository) GetByUserID(ctx context.Context, userID int64) ([]mode
 		ORDER BY uploaded_at DESC
 	`
 
-	rows, err := r.pool.Query(ctx, query, userID)
+	rows, err := r.Query(ctx, query, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -112,8 +112,7 @@ func (r *orderRepository) UpdateStatus(ctx context.Context, number string, statu
 		WHERE number = $3
 	`
 
-	_, err := r.pool.Exec(ctx, query, status, accrual, number)
-	return err
+	return r.ExecContext(ctx, query, status, accrual, number)
 }
 
 func (r *orderRepository) GetPendingOrders(ctx context.Context) ([]models.Order, error) {
@@ -124,7 +123,7 @@ func (r *orderRepository) GetPendingOrders(ctx context.Context) ([]models.Order,
 		ORDER BY uploaded_at ASC
 	`
 
-	rows, err := r.pool.Query(ctx, query, models.OrderStatusNew, models.OrderStatusProcessing)
+	rows, err := r.Query(ctx, query, models.OrderStatusNew, models.OrderStatusProcessing)
 	if err != nil {
 		return nil, err
 	}

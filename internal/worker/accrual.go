@@ -10,6 +10,7 @@ import (
 	"github.com/Daniil-Podruchny/gofermart-loyalty/pkg/logger"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
 type AccrualWorker struct {
@@ -17,25 +18,53 @@ type AccrualWorker struct {
 	orderRepo     repository.OrderRepository
 	balanceRepo   repository.BalanceRepository
 	pollInterval  time.Duration
+	concurrency   int // лимит параллельных обработок
 	stopped       chan struct{}
+}
+
+type WorkerOption func(*AccrualWorker)
+
+// WithPollInterval устанавливает интервал опроса
+func WithPollInterval(d time.Duration) WorkerOption {
+	return func(w *AccrualWorker) {
+		w.pollInterval = d
+	}
+}
+
+// WithConcurrency устанавливает лимит параллельных обработок
+func WithConcurrency(n int) WorkerOption {
+	return func(w *AccrualWorker) {
+		w.concurrency = n
+	}
 }
 
 func NewAccrualWorker(
 	accrualClient *client.AccrualClient,
 	orderRepo repository.OrderRepository,
 	balanceRepo repository.BalanceRepository,
+	opts ...WorkerOption,
 ) *AccrualWorker {
-	return &AccrualWorker{
+	w := &AccrualWorker{
 		accrualClient: accrualClient,
 		orderRepo:     orderRepo,
 		balanceRepo:   balanceRepo,
 		pollInterval:  5 * time.Second,
+		concurrency:   10, // дефолт: 10 параллельных запросов
 		stopped:       make(chan struct{}),
 	}
+
+	for _, opt := range opts {
+		opt(w)
+	}
+
+	return w
 }
 
 func (w *AccrualWorker) Start(ctx context.Context) {
-	logger.Info("accrual worker started")
+	logger.Info("accrual worker started",
+		zap.Duration("poll_interval", w.pollInterval),
+		zap.Int("concurrency", w.concurrency))
+
 	ticker := time.NewTicker(w.pollInterval)
 	defer ticker.Stop()
 
@@ -68,13 +97,22 @@ func (w *AccrualWorker) processOrders(ctx context.Context) {
 
 	logger.Info("processing pending orders", zap.Int("count", len(orders)))
 
-	for _, order := range orders {
-		select {
-		case <-ctx.Done():
-			return
-		default:
+	// Используем errgroup для параллельной обработки с лимитом
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(w.concurrency)
+
+	for i := range orders {
+		order := orders[i] // capture loop variable
+
+		g.Go(func() error {
 			w.processOrder(ctx, &order)
-		}
+			return nil // не прерываем обработку других заказов при ошибке
+		})
+	}
+
+	// Ждем завершения всех горутин
+	if err := g.Wait(); err != nil {
+		logger.Error("error in parallel processing", zap.Error(err))
 	}
 }
 

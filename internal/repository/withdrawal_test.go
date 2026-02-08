@@ -61,7 +61,9 @@ func TestWithdrawalRepository_Create(t *testing.T) {
 
 			tt.mockFn(mock)
 
-			repo := &withdrawalRepository{pool: mock}
+			repo := &withdrawalRepository{
+				BaseRepository: NewBaseRepository[*models.Withdrawal](mock, "withdrawals"),
+			}
 			err = repo.Create(context.Background(), tt.withdrawal)
 
 			if tt.wantErr {
@@ -137,7 +139,9 @@ func TestWithdrawalRepository_GetByUserID(t *testing.T) {
 
 			tt.mockFn(mock)
 
-			repo := &withdrawalRepository{pool: mock}
+			repo := &withdrawalRepository{
+				BaseRepository: NewBaseRepository[*models.Withdrawal](mock, "withdrawals"),
+			}
 			withdrawals, err := repo.GetByUserID(context.Background(), tt.userID)
 
 			if tt.wantErr {

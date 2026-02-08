@@ -5,9 +5,8 @@ import (
 	"errors"
 
 	"github.com/Daniil-Podruchny/gofermart-loyalty/internal/models"
-
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type UserRepository interface {
@@ -17,33 +16,43 @@ type UserRepository interface {
 }
 
 type userRepository struct {
-	pool PgxPool
+	*BaseRepository[*models.User]
 }
 
-func NewUserRepository(pool *pgxpool.Pool) UserRepository {
-	return &userRepository{pool: pool}
+func NewUserRepository(pool PgxPool) UserRepository {
+	return &userRepository{
+		BaseRepository: NewBaseRepository[*models.User](pool, "users"),
+	}
 }
 
 func (r *userRepository) Create(ctx context.Context, user *models.User) error {
 	query := `
-		INSERT INTO users (login, password_hash, created_at) 
-		VALUES ($1, $2, $3) 
+		INSERT INTO users (login, password_hash, created_at)
+		VALUES ($1, $2, $3)
 		RETURNING id
 	`
 
-	err := r.pool.QueryRow(ctx, query, user.Login, user.PasswordHash, user.CreatedAt).Scan(&user.ID)
-	return err
+	err := r.QueryRow(ctx, query, user.Login, user.PasswordHash, user.CreatedAt).Scan(&user.ID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ErrLoginExists
+		}
+		return err
+	}
+
+	return nil
 }
 
 func (r *userRepository) GetByLogin(ctx context.Context, login string) (*models.User, error) {
 	query := `
-		SELECT id, login, password_hash, created_at 
-		FROM users 
+		SELECT id, login, password_hash, created_at
+		FROM users
 		WHERE login = $1
 	`
 
-	var user models.User
-	err := r.pool.QueryRow(ctx, query, login).Scan(
+	user := &models.User{}
+	err := r.QueryRow(ctx, query, login).Scan(
 		&user.ID,
 		&user.Login,
 		&user.PasswordHash,
@@ -57,18 +66,18 @@ func (r *userRepository) GetByLogin(ctx context.Context, login string) (*models.
 		return nil, err
 	}
 
-	return &user, nil
+	return user, nil
 }
 
 func (r *userRepository) GetByID(ctx context.Context, id int64) (*models.User, error) {
 	query := `
-		SELECT id, login, password_hash, created_at 
-		FROM users 
+		SELECT id, login, password_hash, created_at
+		FROM users
 		WHERE id = $1
 	`
 
-	var user models.User
-	err := r.pool.QueryRow(ctx, query, id).Scan(
+	user := &models.User{}
+	err := r.QueryRow(ctx, query, id).Scan(
 		&user.ID,
 		&user.Login,
 		&user.PasswordHash,
@@ -82,5 +91,5 @@ func (r *userRepository) GetByID(ctx context.Context, id int64) (*models.User, e
 		return nil, err
 	}
 
-	return &user, nil
+	return user, nil
 }
